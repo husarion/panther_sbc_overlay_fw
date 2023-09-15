@@ -1,5 +1,7 @@
 # Panther Overlay Firmware
-Panther Overlay Firmware is a modified version of [USBCanConverterBasic (UCCB)](https://github.com/UsbCANConverter-UCCbasic) which is open source USB converter for Controller Area Network (CAN). It has been adapted to replace previous Overlays' MCUs (ATTiny).
+Panther Overlay Firmware is a modified version of [USBCanConverterBasic (UCCB)](https://github.com/UsbCANConverter-UCCbasic) which is open source USB converter for Controller Area Network (CAN). It has been adapted to replace previous Overlays' MCUs (ATTiny). 
+
+**This firmware is dedicated to Panther SBC Overlay versions 1.3+**
 
 ## Firmware
 The original firmware comes from [ucandevices - USBCanConverterBasic(UCCB)](https://github.com/UsbCANConverter-UCCbasic/UCCBEmbedded) and has been rewritten for STM32F072CB MCU. The main changes made are the MCU change and the implementation of the DMA on the UART interface.
