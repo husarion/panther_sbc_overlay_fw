@@ -171,7 +171,7 @@ void USART2_IRQHandler(void)
 	if((USART2->ISR & USART_ISR_CMF) == USART_ISR_CMF) //character match interrupt
 	{
 		USART2->ICR |= USART_ICR_CMCF;
-		HAL_UART_DMAStop(&huart2);
+		HAL_UART_AbortReceive(&huart2);
 		HAL_UART_RxCpltCallback(&huart2);
 	}
 	HAL_UART_IRQHandler(&huart2);

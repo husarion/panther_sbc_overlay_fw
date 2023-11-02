@@ -136,6 +136,7 @@ static struct strip_buffer
   uint32_t endFrame;
 }strip_buffer;
 
+
 CanTxMsgTypeDef CanTxBuffer;
 CanRxMsgTypeDef CanRxBuffer;
 
@@ -192,6 +193,9 @@ int main(void)
   MX_USART2_UART_Init();
   MX_SPI1_Init();
   MX_USB_DEVICE_Init();
+  __HAL_RCC_DBGMCU_CLK_ENABLE();
+  __HAL_DBGMCU_FREEZE_IWDG();
+
   MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
 
@@ -344,7 +348,7 @@ static void MX_IWDG_Init(void)
 static void MX_USART2_UART_Init(void)
 {
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 4000000;
+  huart2.Init.BaudRate = 6000000;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -402,12 +406,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(CAN_MOD_GPIO_Port, &GPIO_InitStruct);
 
-//	GPIO_InitStruct.Pin = GPIO_PIN_0;
-//	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-//	GPIO_InitStruct.Pull = GPIO_NOPULL;
-//	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-//	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
   	GPIO_InitStruct.Pin = GPIO_PIN_0;
   	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   	GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -418,59 +416,36 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void handleCAN(void)
 {
-	if(rxFullFlag == 0)
-	{
-		HAL_UART_Receive_DMA(&huart2, uart_buffers[activeBuffer].data, UART_RX_BUFFER_SIZE); //resume DMA if buffers cleared and ready for reception
-	}
-	if(rxFullFlag == 1)
-	{
-		rxFullFlag = 0;
-		memset(uart_buffers[!activeBuffer].data, 0 , UART_RX_BUFFER_SIZE);
-		uart_buffers[!activeBuffer].bufferCleared = 1;
-		__HAL_UART_FLUSH_DRREGISTER(&huart2); //clear the UART register
-		slCanCheckCommand(command);
-	}
-//	if(rxFullFlag)
-//	{
-//		if(!uart_buffers[activeBuffer].bufferCleared) //if currently selected buffer is not cleared
-//		{
-//			memset(uart_buffers[activeBuffer].data, 0 , UART_RX_BUFFER_SIZE);
-//			uart_buffers[activeBuffer].bufferCleared = 1;
-//		}
-//
-//		HAL_UART_Receive_DMA(&huart2, uart_buffers[activeBuffer].data, UART_RX_BUFFER_SIZE); //resume DMA
-//		uart_buffers[activeBuffer].bufferCleared = 0;
-//
-//		slCanProccesInputUART((const char*)&uart_buffers[!activeBuffer].data); //decode buffer content
-//		msgPending = 0;
-//		memset(uart_buffers[!activeBuffer].data, 0 , UART_RX_BUFFER_SIZE); //clear the buffer
-//		uart_buffers[!activeBuffer].bufferCleared = 1;
-//
-//		__HAL_UART_FLUSH_DRREGISTER(&huart2); //clear the UART register
-//		rxFullFlag = 0;
-//		if(slCanCheckCommand(command) == 7) //if something goes wrong try to fix it by cleaning the buffer again
-//		{
-//			HAL_UART_DMAStop(&huart2);
-//			memset(uart_buffers[activeBuffer].data, 0 , UART_RX_BUFFER_SIZE); //clear the buffer
-//			uart_buffers[activeBuffer].bufferCleared = 1;
-//		}
-//
-//	}
-
-	if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED) //if USB is connected, check it and not UART
+	if (hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED) //if USB is connected, check it and not UART
 	{
 		slCanCheckCommand(command);
 	}
-
-	if (canRxFlags.flags.byte != 0 && hdma_usart2_tx.State == HAL_DMA_STATE_READY) // potential fix to uart tx buffer overwriting
+	else
 	{
-		slcanReciveCanFrame(hcan.pRxMsg);
-		canRxFlags.flags.fifo1 = 0;
-		HAL_CAN_Receive_IT(&hcan, CAN_FIFO0);
+		if(rxFullFlag == 0)
+		{
+			HAL_UART_Receive_DMA(&huart2, uart_buffers[activeBuffer].data, UART_RX_BUFFER_SIZE); //resume DMA if buffers cleared and ready for reception
+		}
+		if(rxFullFlag == 1)
+		{
+			rxFullFlag = 0;
+			memset(uart_buffers[!activeBuffer].data, 0 , UART_RX_BUFFER_SIZE);
+			uart_buffers[!activeBuffer].bufferCleared = 1;
+//			__HAL_UART_FLUSH_DRREGISTER(&huart2); //clear the UART register
+			slCanCheckCommand(command);
+		}
+		if (canRxFlags.flags.byte != 0 && hdma_usart2_tx.State == HAL_DMA_STATE_READY) // potential fix to uart tx buffer overwriting
+		{
+			slcanReciveCanFrame(hcan.pRxMsg);
+			canRxFlags.flags.fifo1 = 0;
+			HAL_CAN_Receive_IT(&hcan, CAN_FIFO0);
+		}
 	}
 
-	slcanOutputFlush(); //send data via UART or USB (if connected)
-
+	if(hdma_usart2_tx.State == HAL_DMA_STATE_READY)
+	{
+		slcanOutputFlush(); //send data via UART or USB (if connected)
+	}
 }
 
 void pantherLights(void)
