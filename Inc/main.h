@@ -54,7 +54,7 @@
 /* Includes ------------------------------------------------------------------*/
 
 /* USER CODE BEGIN Includes */
-
+#include "stdint.h"
 /* USER CODE END Includes */
 
 /* Private define ------------------------------------------------------------*/
@@ -87,6 +87,54 @@
 
 #define ERR_CODE_CAN 1
 #define ERR_CODE_
+
+#define UART_RX_BUFFER_SIZE    30
+#define TYPE_ID 0x16
+#define NUM_LEDS 46
+
+#define RTS_LOW() HAL_GPIO_WritePin(UART_RTS_GPIO_Port, UART_RTS_Pin, GPIO_PIN_RESET)
+#define RTS_HIGH() HAL_GPIO_WritePin(UART_RTS_GPIO_Port, UART_RTS_Pin, GPIO_PIN_SET)
+
+/* APA102 SPI Frame */
+typedef struct
+{
+  union {
+    uint8_t buf[4];
+    struct {
+      uint8_t fixed : 3;
+      uint8_t brightness : 5;
+      uint8_t blue;
+      uint8_t green;
+      uint8_t red;
+    }fields;
+  };
+}Led;
+
+typedef struct tcanRxFlags {
+	union {
+		struct {
+			uint8_t fifo1 :1;
+			uint8_t fifo2 :1;
+		};
+		uint8_t byte;
+	} flags;
+	uint8_t activefifo;
+} tcanRx;
+
+typedef struct
+{
+	uint8_t bufferParsed  :1;
+	uint8_t bufferCleared :1;
+	uint8_t data[UART_RX_BUFFER_SIZE];
+}uart_buffer;
+
+
+struct _strip_buffer
+{
+  uint32_t startFrame;
+  Led strip[NUM_LEDS];
+  uint32_t endFrame;
+}strip_buffer;
 
 /* USER CODE END Private defines */
 

@@ -55,7 +55,6 @@
 #include "usbd_cdc_if.h"
 #include "slcan/slcan.h"
 #include "slcan/slcan_additional.h"
-//#include "apa102.h"
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -69,6 +68,20 @@ DMA_HandleTypeDef hdma_usart2_rx;
 DMA_HandleTypeDef hdma_spi1_tx;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
+CanTxMsgTypeDef CanTxBuffer;
+CanRxMsgTypeDef CanRxBuffer;
+
+uart_buffer uart_buffers[2];
+volatile tcanRx canRxFlags;
+volatile int32_t serialNumber;
+const uint32_t *uid = (uint32_t *)(UID_BASE + 4);
+static uint8_t rxFullFlag = 0;
+uint8_t msgPending = 0;
+uint8_t activeBuffer = 0;
+uint16_t counter = 0; //LED animation counter
+uint32_t lastLEDTick = 0, lastAPATick = 0;
+uint32_t errCode = 0;
+uint8_t rxCnt = 0;
 
 /* USER CODE END PV */
 
@@ -83,79 +96,14 @@ static void MX_IWDG_Init(void);
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
 void bootloaderSwitcher();
+void handleCAN(void);
+void pantherLights(void);
+void toggleLED(void);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
 
-#define UART_RX_BUFFER_SIZE    30
-#define TYPE_ID 0x16
-#define NUM_LEDS 46
 
-#define RTS_LOW() HAL_GPIO_WritePin(UART_RTS_GPIO_Port, UART_RTS_Pin, GPIO_PIN_RESET)
-#define RTS_HIGH() HAL_GPIO_WritePin(UART_RTS_GPIO_Port, UART_RTS_Pin, GPIO_PIN_SET)
-
-
-/* APA102 SPI Frame */
-typedef struct
-{
-  union {
-    uint8_t buf[4];
-    struct {
-      uint8_t fixed : 3;
-      uint8_t brightness : 5;
-      uint8_t blue;
-      uint8_t green;
-      uint8_t red;
-    }fields;
-  };
-}Led;
-
-typedef struct tcanRxFlags {
-	union {
-		struct {
-			uint8_t fifo1 :1;
-			uint8_t fifo2 :1;
-		};
-		uint8_t byte;
-	} flags;
-	uint8_t activefifo;
-} tcanRx;
-
-typedef struct
-{
-	uint8_t bufferParsed  :1;
-	uint8_t bufferCleared :1;
-	uint8_t data[UART_RX_BUFFER_SIZE];
-}uart_buffer;
-
-
-static struct strip_buffer
-{
-  uint32_t startFrame;
-  Led strip[NUM_LEDS];
-  uint32_t endFrame;
-}strip_buffer;
-
-
-CanTxMsgTypeDef CanTxBuffer;
-CanRxMsgTypeDef CanRxBuffer;
-
-uart_buffer uart_buffers[2];
-
-volatile tcanRx canRxFlags;
-volatile int32_t serialNumber;
-const uint32_t *uid = (uint32_t *)(UID_BASE + 4);
-static uint8_t rxFullFlag = 0;
-uint8_t msgPending = 0;
-uint8_t activeBuffer = 0;
-uint16_t counter = 0; //LED animation counter
-uint32_t lastLEDTick = 0, lastAPATick = 0;
-uint32_t errCode = 0;
-uint8_t rxCnt = 0;
-
-void handleCAN(void);
-void pantherLights(void);
-void toggleLED(void);
 /* USER CODE END 0 */
 
 /**
@@ -167,14 +115,12 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 	serialNumber = TYPE_ID | (((*uid) << 8) & 0xFFFFFF00);
-//  bootloaderSwitcher();
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
-
   /* USER CODE BEGIN Init */
 
   /* USER CODE END Init */
@@ -193,24 +139,24 @@ int main(void)
   MX_USART2_UART_Init();
   MX_SPI1_Init();
   MX_USB_DEVICE_Init();
+
+  //Disable WATCHDOG on debug
   __HAL_RCC_DBGMCU_CLK_ENABLE();
   __HAL_DBGMCU_FREEZE_IWDG();
-
   MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
 
   hcan.pTxMsg = &CanTxBuffer;
   hcan.pRxMsg = &CanRxBuffer;
-
   canRxFlags.flags.byte = 0;
 
-// CAN RX init
+// CAN RX setup
   slcanClearAllFilters();
   HAL_NVIC_SetPriority(CEC_CAN_IRQn, 2, 2);
   HAL_CAN_Receive_IT(&hcan, CAN_FIFO0);
 
-// UART RX
-//enable CR character detection and disable UART RX interrupt
+// UART RX setup
+//enable CR character detection and disable UART RX interrupt (on each byte)
   USART2->CR1 &= ~USART_CR1_UE;
   USART2->CR2 |= USART_CR2_ADDM7;
   USART2->CR2 |= (uint32_t)(0x0D << USART_CR2_ADD_Pos);
@@ -221,7 +167,7 @@ int main(void)
 
 // start DMA
   HAL_UART_Receive_DMA(&huart2, uart_buffers[activeBuffer].data, UART_RX_BUFFER_SIZE); //UART
-  HAL_SPI_Transmit_DMA(&hspi1, (uint8_t*)&strip_buffer, sizeof(struct strip_buffer)); //SPI (led strip)
+  HAL_SPI_Transmit_DMA(&hspi1, (uint8_t*)&strip_buffer, sizeof(struct _strip_buffer)); //SPI (led strip)
 // enable UART global interrupts
   HAL_NVIC_SetPriority(USART2_IRQn, 0, 0);
   NVIC_EnableIRQ(USART2_IRQn);
@@ -413,6 +359,31 @@ static void MX_GPIO_Init(void)
   	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 }
 
+/* SPI1 init function */
+static void MX_SPI1_Init(void)
+{
+
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 7;
+  hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+}
+
 /* USER CODE BEGIN 4 */
 void handleCAN(void)
 {
@@ -450,7 +421,7 @@ void handleCAN(void)
 
 void pantherLights(void)
 {
-	if(HAL_GetTick() - lastAPATick >= 15) // LED strip animation update
+	if(HAL_GetTick() - lastAPATick >= 15) // LED strip animation update (od Mikolaja W.)
 	{
 		strip_buffer.endFrame = 0;
 		strip_buffer.startFrame = 0;
@@ -530,63 +501,10 @@ void hUCCB_HandleBufferError()
 	HAL_UART_Receive_DMA(&huart2, uart_buffers[activeBuffer].data, UART_RX_BUFFER_SIZE);
 }
 
-/* SPI1 init function */
-static void MX_SPI1_Init(void)
-{
-
-  /* SPI1 parameter configuration*/
-  hspi1.Instance = SPI1;
-  hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 7;
-  hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
-  if (HAL_SPI_Init(&hspi1) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-}
-
-void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
-{
-	HAL_GPIO_TogglePin(LED_SEL_FR_GPIO_PORT, LED_SEL_FR_Pin); //switch LED bar between front and rear
-}
-
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
 	uint32_t err = huart->ErrorCode;
 	UNUSED(err);
-}
-void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) // peripheral error
-{
-	uint32_t err = huart->ErrorCode;
-//	HAL_UART_Transmit(&huart2, sl_frame, sl_frame_len, 100);
-//	NVIC_SystemReset();
-	HAL_UART_Receive_DMA(huart, uart_buffers[activeBuffer].data, UART_RX_BUFFER_SIZE); //ignore and continue to receive data
-	UNUSED(err);
-}
-void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan) //peripheral error
-{
-	HAL_CAN_Receive_IT(hcan, CAN_FIFO0); //ignore errors and try to receive normally
-}
-
-void HAL_CAN_RxCpltCallback(CAN_HandleTypeDef* hcan) // new CAN frame is present
-{
-	canRxFlags.flags.fifo1 = 1;
-//    HAL_CAN_Receive_IT(hcan,CAN_FIFO0);
-}
-
-void HAL_CAN_TxCpltCallback(CAN_HandleTypeDef* hcan)
-{
-	msgPending = 0;
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart) //new command received on UART
@@ -596,6 +514,37 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef * huart) //new command received 
 	activeBuffer = !activeBuffer; //swap rx buffers
 	HAL_UART_Receive_DMA(&huart2, uart_buffers[activeBuffer].data, UART_RX_BUFFER_SIZE);
 }
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) // peripheral error
+{
+	uint32_t err = huart->ErrorCode;
+//	HAL_UART_Transmit(&huart2, sl_frame, sl_frame_len, 100);
+//	NVIC_SystemReset();
+	HAL_UART_Receive_DMA(huart, uart_buffers[activeBuffer].data, UART_RX_BUFFER_SIZE); //ignore and continue to receive data
+	UNUSED(err);
+}
+
+void HAL_CAN_TxCpltCallback(CAN_HandleTypeDef* hcan)
+{
+	msgPending = 0;
+}
+
+void HAL_CAN_RxCpltCallback(CAN_HandleTypeDef* hcan) // new CAN frame is present
+{
+	canRxFlags.flags.fifo1 = 1;
+//    HAL_CAN_Receive_IT(hcan,CAN_FIFO0);
+}
+
+void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan) //peripheral error
+{
+	HAL_CAN_Receive_IT(hcan, CAN_FIFO0); //ignore errors and try to receive normally
+}
+
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+	HAL_GPIO_TogglePin(LED_SEL_FR_GPIO_PORT, LED_SEL_FR_Pin); //switch LED bar between front and rear
+}
+
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
 	__NOP();

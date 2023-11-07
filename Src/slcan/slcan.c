@@ -23,7 +23,6 @@ static uint8_t timestamping = 0;
 static uint8_t terminator = SLCAN_CR;
 static uint8_t UART_FLAG = 0;
 volatile uint8_t sl_frame_len=0;
-volatile uint8_t gowno = 0;
 uint8_t sl_frame[32];
 uint8_t rxCnt_slcan;
 extern UART_HandleTypeDef huart2;
