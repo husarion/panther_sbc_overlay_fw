@@ -114,7 +114,7 @@ void toggleLED(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	serialNumber = TYPE_ID | (((*uid) << 8) & 0xFFFFFF00);
+ 	serialNumber = TYPE_ID | (((*uid) << 8) & 0xFFFFFF00);
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -299,7 +299,7 @@ static void MX_USART2_UART_Init(void)
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
   huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_RTS;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_RTS_CTS;
   huart2.Init.OverSampling = UART_OVERSAMPLING_8;
   huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_ENABLE;
 
@@ -387,9 +387,15 @@ static void MX_SPI1_Init(void)
 /* USER CODE BEGIN 4 */
 void handleCAN(void)
 {
-	if (hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED) //if USB is connected, check it and not UART
+	if (hUsbDeviceFS.dev_state == USBD_STATE_CONFIGURED) //if USB is connected, check it not UART
 	{
 		slCanCheckCommand(command);
+		if (canRxFlags.flags.byte != 0)
+		{
+			slcanReciveCanFrame(hcan.pRxMsg);
+			canRxFlags.flags.fifo1 = 0;
+			HAL_CAN_Receive_IT(&hcan, CAN_FIFO0);
+		}
 	}
 	else
 	{
@@ -405,7 +411,7 @@ void handleCAN(void)
 //			__HAL_UART_FLUSH_DRREGISTER(&huart2); //clear the UART register
 			slCanCheckCommand(command);
 		}
-		if (canRxFlags.flags.byte != 0 && hdma_usart2_tx.State == HAL_DMA_STATE_READY) // potential fix to uart tx buffer overwriting
+		if (canRxFlags.flags.byte != 0 && hdma_usart2_tx.State == HAL_DMA_STATE_READY) //5 fix to uart tx buffer overwriting
 		{
 			slcanReciveCanFrame(hcan.pRxMsg);
 			canRxFlags.flags.fifo1 = 0;
