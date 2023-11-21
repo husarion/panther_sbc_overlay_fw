@@ -13461,15 +13461,15 @@ void _Error_Handler(char *file, int line)
  80049d0:	f7fc f932 	bl	8000c38 <HAL_NVIC_EnableIRQ>
   huart2.Instance = USART2;
  80049d4:	4b64      	ldr	r3, [pc, #400]	; (8004b68 <main+0x278>)
-  huart2.Init.BaudRate = 6000000;
+  huart2.Init.BaudRate = 4000000;
  80049d6:	4a64      	ldr	r2, [pc, #400]	; (8004b68 <main+0x278>)
   huart2.Instance = USART2;
  80049d8:	601e      	str	r6, [r3, #0]
-  huart2.Init.BaudRate = 6000000;
+  huart2.Init.BaudRate = 4000000;
  80049da:	4b64      	ldr	r3, [pc, #400]	; (8004b6c <main+0x27c>)
   if (HAL_UART_Init(&huart2) != HAL_OK)
  80049dc:	0010      	movs	r0, r2
-  huart2.Init.BaudRate = 6000000;
+  huart2.Init.BaudRate = 4000000;
  80049de:	6053      	str	r3, [r2, #4]
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
  80049e0:	2300      	movs	r3, #0
@@ -13723,7 +13723,7 @@ void _Error_Handler(char *file, int line)
  8004b60:	08005e7e 	.word	0x08005e7e
  8004b64:	40004400 	.word	0x40004400
  8004b68:	200006a8 	.word	0x200006a8
- 8004b6c:	005b8d80 	.word	0x005b8d80
+ 8004b6c:	003d0900 	.word	0x003d0900
  8004b70:	08005e70 	.word	0x08005e70
  8004b74:	20000644 	.word	0x20000644
  8004b78:	40013000 	.word	0x40013000
@@ -14462,7 +14462,7 @@ uint8_t slCanCheckCommand(uint8_t *line)
  8004fd0:	2076      	movs	r0, #118	; 0x76
  8004fd2:	f7ff fde9 	bl	8004ba8 <slcanSetOutputChar>
                 slcanSetOutputAsHex(VERSION_FIRMWARE_MAJOR);
- 8004fd6:	2001      	movs	r0, #1
+ 8004fd6:	2002      	movs	r0, #2
  8004fd8:	f7ff fe05 	bl	8004be6 <slcanSetOutputAsHex>
                 slcanSetOutputAsHex(VERSION_FIRMWARE_MINOR);
  8004fdc:	2000      	movs	r0, #0
